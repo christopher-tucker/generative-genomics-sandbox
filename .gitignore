@@ -37,4 +37,10 @@ Thumbs.db
 
 # Project specific
 *.zip
-
+data/raw/*
+data/processed/*
+models/*.pkl
+models/*.json
+models/*.pt
+*.npy
+*.npz
