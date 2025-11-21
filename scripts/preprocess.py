@@ -95,7 +95,7 @@ def parse_sample_metadata(lines):
     for line in lines:
         if line.startswith("!Sample_geo_accession"):
             parts = line.strip().split("\t")
-            sample_ids = parts[1:]
+            sample_ids = [sid.strip().strip('"') for sid in parts[1:]]
             for sid in sample_ids:
                 characteristics[sid] = {}
             break
@@ -106,18 +106,32 @@ def parse_sample_metadata(lines):
     print(f"Found {len(sample_ids)} samples")
 
     # 2) Parse characteristics
+    field_idx = 0
     for line in lines:
         if line.startswith("!Sample_characteristics_ch1"):
-            parts = line.strip().split("\t")
-            # e.g. "!Sample_characteristics_ch1 = cell type: MCF7"
-            meta_header = parts[0].split("=", 1)[1].strip()  # "cell type: MCF7"
-            if ":" in meta_header:
-                field, _ = meta_header.split(":", 1)
-                field = field.strip().lower().replace(" ", "_")
-            else:
-                field = meta_header.strip().lower().replace(" ", "_")
+            parts = line.rstrip("\n").split("\t")
+            header_cell = parts[0]
+            values = [v.strip().strip('"') for v in parts[1:]]
 
-            values = parts[1:]
+            # Try to infer the field name from the header or first value
+            field = None
+            if "=" in header_cell:
+                meta_header = header_cell.split("=", 1)[1].strip()
+                if ":" in meta_header:
+                    field = meta_header.split(":", 1)[0].strip()
+                else:
+                    field = meta_header.strip()
+            else:
+                first_val = values[0] if values else ""
+                if ":" in first_val:
+                    field = first_val.split(":", 1)[0].strip()
+
+            if not field:
+                field_idx += 1
+                field = f"characteristics_ch1_{field_idx}"
+
+            field = field.lower().replace(" ", "_")
+
             for sid, val in zip(sample_ids, values):
                 v = val.strip()
                 # Many values also look like "cell type: MCF7"; keep part after ':'
@@ -144,7 +158,8 @@ def parse_expression_matrix(lines, sample_ids):
     """
     data_start_idx = None
     for i, line in enumerate(lines):
-        if line.startswith("ID_REF"):
+        stripped = line.lstrip()
+        if stripped.startswith("ID_REF") or stripped.startswith('"ID_REF"'):
             data_start_idx = i
             break
 
@@ -233,7 +248,11 @@ def main():
         cond_df[c] = cond_df[c].astype(str)
 
     from sklearn.preprocessing import OneHotEncoder
-    cond_encoder = OneHotEncoder(sparse=False, handle_unknown="ignore")
+    try:
+        cond_encoder = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
+    except TypeError:
+        # sklearn <1.2 uses `sparse` instead of `sparse_output`
+        cond_encoder = OneHotEncoder(sparse=False, handle_unknown="ignore")
     X_cond = cond_encoder.fit_transform(cond_df.values).astype("float32")
 
     print("Conditioning matrix shape (samples x cond_dim):", X_cond.shape)
