@@ -1,5 +1,8 @@
 # Generative Genomics Sandbox
 
+## Data sources
+- GSE102901 (NCBI GEO): https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE102901
+
 Minimal starter repo for a toy generative-genomics project:
 - FastAPI model server (Python + PyTorch)
 - Golang API gateway
