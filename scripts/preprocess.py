@@ -1,20 +1,25 @@
 """
-Preprocess GSE102901 GEO series matrix into ML-ready matrices.
+Preprocess GSE60424 GEO data into ML-ready matrices.
+
+We use:
+- Series Matrix file       -> sample metadata (conditions, cell types, etc.)
+- NCBI TPM counts matrix   -> gene expression matrix (genes x samples)
 
 Steps:
-- Load series matrix file from data/raw/
-- Parse sample metadata (cell_type, treatment, etc.)
-- Build expression matrix (samples x genes)
+- Load series matrix from data/raw/GSE60424_series_matrix.txt(.gz)
+- Parse sample metadata (individual, cell type, etc.)
+- Load TPM counts table from data/raw/GSE60424_norm_counts_TPM_GRCh38.p13_NCBI.tsv.gz
+- Align samples between metadata and expression
 - Log-transform and select top N most variable genes
 - Standardize expression values
-- One-hot encode metadata into design matrix
+- One-hot encode selected metadata columns into conditioning matrix
 - Save:
     data/processed/X_expr.npy
     data/processed/X_cond.npy
     data/processed/meta.csv
-    models/genes_gse102901.json
-    models/design_encoder_gse102901.pkl
-    models/expr_scaler_gse102901.pkl
+    models/genes_gse60424.json
+    models/design_encoder_gse60424.pkl
+    models/expr_scaler_gse60424.pkl
 """
 
 import os
@@ -32,8 +37,9 @@ RAW_DIR = os.path.join("data", "raw")
 PROCESSED_DIR = os.path.join("data", "processed")
 MODELS_DIR = "models"
 
-# Default file name we expect
-DEFAULT_SERIES_BASENAME = "GSE102901_series_matrix.txt"
+# File names we expect
+SERIES_BASENAME = "GSE60424_series_matrix.txt"
+TPM_COUNTS_BASENAME = "GSE60424_norm_counts_TPM_GRCh38.p13_NCBI.tsv.gz"
 
 # Number of genes to keep (most variable)
 N_GENES = 500
@@ -41,23 +47,25 @@ N_GENES = 500
 # Candidate metadata fields to use as conditioning variables
 CANDIDATE_COND_FIELDS = [
     "cell_type",
-    "cell line",
+    "cell type",
+    "tissue",
     "treatment",
     "timepoint",
     "time_point",
-    "dose",
-    "concentration",
+    "stimulus",
+    "condition",
+    "individual",
 ]
 
 
 def _open_series_file():
     """
     Try opening:
-      data/raw/GSE102901_series_matrix.txt
+      data/raw/GSE60424_series_matrix.txt
     or
-      data/raw/GSE102901_series_matrix.txt.gz
+      data/raw/GSE60424_series_matrix.txt.gz
     """
-    txt_path = os.path.join(RAW_DIR, DEFAULT_SERIES_BASENAME)
+    txt_path = os.path.join(RAW_DIR, SERIES_BASENAME)
     gz_path = txt_path + ".gz"
 
     if os.path.exists(txt_path):
@@ -69,8 +77,7 @@ def _open_series_file():
     else:
         raise FileNotFoundError(
             f"Could not find {txt_path} or {gz_path}. "
-            "Make sure you downloaded the GEO series matrix file "
-            "into data/raw/."
+            "Make sure you downloaded the GEO Series Matrix file into data/raw/."
         )
 
 
@@ -86,7 +93,7 @@ def parse_sample_metadata(lines):
     """
     Parse GEO series matrix lines to extract sample IDs and metadata.
     Returns:
-        meta_df: pandas DataFrame indexed by sample_id
+        meta_df: pandas DataFrame indexed by sample_id (GSM accession)
     """
     sample_ids = []
     characteristics = {}
@@ -103,9 +110,9 @@ def parse_sample_metadata(lines):
     if not sample_ids:
         raise RuntimeError("Could not find !Sample_geo_accession line in series matrix.")
 
-    print(f"Found {len(sample_ids)} samples")
+    print(f"Found {len(sample_ids)} samples in metadata")
 
-    # 2) Parse characteristics
+    # 2) Parse characteristics lines
     field_idx = 0
     for line in lines:
         if line.startswith("!Sample_characteristics_ch1"):
@@ -134,7 +141,6 @@ def parse_sample_metadata(lines):
 
             for sid, val in zip(sample_ids, values):
                 v = val.strip()
-                # Many values also look like "cell type: MCF7"; keep part after ':'
                 if ":" in v:
                     v = v.split(":", 1)[1].strip()
                 characteristics[sid][field] = v
@@ -151,36 +157,46 @@ def parse_sample_metadata(lines):
     return meta_df
 
 
-def parse_expression_matrix(lines, sample_ids):
+def load_tpm_expression(sample_ids):
     """
-    Find the expression table (starting at ID_REF) and return a
-    DataFrame of shape [samples x genes].
+    Load NCBI TPM expression matrix from data/raw/GSE60424_norm_counts_TPM_GRCh38.p13_NCBI.tsv.gz
+
+    Expected format:
+    - first column: gene_id
+    - remaining columns: sample IDs (ideally GSM accession numbers)
     """
-    data_start_idx = None
-    for i, line in enumerate(lines):
-        stripped = line.lstrip()
-        if stripped.startswith("ID_REF") or stripped.startswith('"ID_REF"'):
-            data_start_idx = i
-            break
+    expr_path = os.path.join(RAW_DIR, TPM_COUNTS_BASENAME)
+    if not os.path.exists(expr_path):
+        raise FileNotFoundError(
+            f"Could not find TPM counts file at {expr_path}. "
+            "Make sure you downloaded GSE60424_norm_counts_TPM_GRCh38.p13_NCBI.tsv.gz into data/raw/."
+        )
 
-    if data_start_idx is None:
-        raise RuntimeError("Could not find expression table header (ID_REF).")
+    print(f"Loading TPM expression matrix from {expr_path}")
+    expr_df = pd.read_csv(expr_path, sep="\t")
 
-    print(f"Expression table starts at line {data_start_idx}")
+    # First column = gene identifier
+    gene_col = expr_df.columns[0]
+    expr_df = expr_df.set_index(gene_col)
 
-    data_str = "".join(lines[data_start_idx:])
-    expr_df = pd.read_csv(StringIO(data_str), sep="\t")
+    # Columns are sample IDs; intersect with metadata sample IDs
+    all_expr_samples = list(expr_df.columns)
+    common = [sid for sid in sample_ids if sid in all_expr_samples]
 
-    # ID_REF column = gene identifiers
-    expr_df = expr_df.rename(columns={"ID_REF": "gene_id"})
-    expr_df = expr_df.set_index("gene_id")
+    if not common:
+        raise RuntimeError(
+            "No overlapping sample IDs between metadata and expression matrix. "
+            f"Metadata IDs (first 5): {sample_ids[:5]}, "
+            f"expression IDs (first 5): {all_expr_samples[:5]}"
+        )
 
-    # transpose -> samples x genes
-    expr_df = expr_df.transpose()
+    if len(common) < len(sample_ids):
+        print(f"Warning: only {len(common)} / {len(sample_ids)} metadata samples "
+              "found in expression matrix. Using the intersection.")
+
+    # Subset and transpose -> samples x genes
+    expr_df = expr_df[common].transpose()
     expr_df.index.name = "sample_id"
-
-    # Keep only the sample_ids we saw in metadata, in order
-    expr_df = expr_df.loc[sample_ids]
 
     print("Expression matrix shape (samples x genes):", expr_df.shape)
     return expr_df
@@ -199,7 +215,6 @@ def select_conditioning_fields(meta_df):
             chosen.append(normalized_cols[cand_norm])
 
     if not chosen:
-        # If nothing matched, just take all columns as a fallback
         chosen = list(meta_df.columns)
         print("No candidate conditioning fields found explicitly.")
         print("Falling back to using all metadata columns.")
@@ -213,18 +228,22 @@ def main():
     os.makedirs(PROCESSED_DIR, exist_ok=True)
     os.makedirs(MODELS_DIR, exist_ok=True)
 
-    # 1) Load raw lines
+    # 1) Load series matrix lines and parse metadata
     lines = load_series_matrix_lines()
-
-    # 2) Parse metadata and expression
     meta_df = parse_sample_metadata(lines)
     sample_ids = list(meta_df.index)
-    expr_df = parse_expression_matrix(lines, sample_ids)
 
-    # Convert expression to float matrix
+    # 2) Load TPM expression matrix and align with metadata
+    expr_df = load_tpm_expression(sample_ids)
+
+    # Align order
+    common_ids = expr_df.index.intersection(meta_df.index)
+    expr_df = expr_df.loc[common_ids]
+    meta_df = meta_df.loc[common_ids]
+    print(f"After aligning, we have {expr_df.shape[0]} samples")
+
+    # 3) Convert expression to float and log1p-normalize
     expr = expr_df.astype(float)
-
-    # 3) Log1p-normalize expression
     expr_log = np.log1p(expr)
     print("Expression after log1p shape:", expr_log.shape)
 
@@ -232,7 +251,8 @@ def main():
     gene_var = expr_log.var(axis=0)
     top_genes = gene_var.sort_values(ascending=False).head(N_GENES).index
     expr_log_top = expr_log[top_genes]
-    print(f"Selected top {N_GENES} most variable genes. New shape:", expr_log_top.shape)
+    print(f"Selected top {min(N_GENES, expr_log_top.shape[1])} most variable genes. "
+          f"New shape: {expr_log_top.shape}")
 
     # 5) Standardize expression (per-gene)
     expr_scaler = StandardScaler()
@@ -243,15 +263,12 @@ def main():
     cond_fields = select_conditioning_fields(meta_df)
     cond_df = meta_df[cond_fields].copy()
 
-    # Ensure all fields are strings (for OneHotEncoder)
     for c in cond_fields:
         cond_df[c] = cond_df[c].astype(str)
 
-    from sklearn.preprocessing import OneHotEncoder
     try:
         cond_encoder = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
     except TypeError:
-        # sklearn <1.2 uses `sparse` instead of `sparse_output`
         cond_encoder = OneHotEncoder(sparse=False, handle_unknown="ignore")
     X_cond = cond_encoder.fit_transform(cond_df.values).astype("float32")
 
@@ -272,9 +289,9 @@ def main():
 
     # 8) Save model-related artifacts
     genes = list(top_genes)
-    genes_path = os.path.join(MODELS_DIR, "genes_gse102901.json")
-    design_encoder_path = os.path.join(MODELS_DIR, "design_encoder_gse102901.pkl")
-    expr_scaler_path = os.path.join(MODELS_DIR, "expr_scaler_gse102901.pkl")
+    genes_path = os.path.join(MODELS_DIR, "genes_gse60424.json")
+    design_encoder_path = os.path.join(MODELS_DIR, "design_encoder_gse60424.pkl")
+    expr_scaler_path = os.path.join(MODELS_DIR, "expr_scaler_gse60424.pkl")
 
     with open(genes_path, "w") as f:
         json.dump(genes, f)
@@ -285,7 +302,6 @@ def main():
     print(f"Saved genes list to {genes_path}")
     print(f"Saved design encoder to {design_encoder_path}")
     print(f"Saved expr scaler to {expr_scaler_path}")
-
     print("Preprocessing complete.")
 
 
