@@ -1,20 +1,28 @@
+from typing import Any, Dict, Optional
+
 from fastapi import FastAPI
 from pydantic import BaseModel
-from .inference import generate_dummy
 
-app = FastAPI()
+from .inference import generate_expression, MODEL_VERSION
 
-class Descriptor(BaseModel):
-    cell_type: str
-    treatment: str
-    dose: float
-    timepoint: float
+app = FastAPI(title="Generative Genomics Model Server")
 
-@app.get('/health')
+
+class GenerateRequest(BaseModel):
+    descriptor: Dict[str, Any]
+    seed: Optional[int] = None
+
+
+@app.get("/health")
 def health():
-    return {'status': 'ok', 'model_version': 'v0.1'}
+    return {"status": "ok", "model_version": MODEL_VERSION}
 
-@app.post('/generate')
-def generate(descriptor: Descriptor):
-    genes, expr = generate_dummy(descriptor.dict())
-    return {'model_version': 'v0.1', 'genes': genes, 'expression': expr}
+
+@app.post("/generate")
+def generate(req: GenerateRequest):
+    genes, expr, model_version = generate_expression(req.descriptor, seed=req.seed)
+    return {
+        "model_version": model_version,
+        "genes": genes,
+        "expression": expr,
+    }

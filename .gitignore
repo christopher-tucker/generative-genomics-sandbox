@@ -44,3 +44,7 @@ models/*.json
 models/*.pt
 *.npy
 *.npz
+
+# chris notes
+chris_notes.txt
+

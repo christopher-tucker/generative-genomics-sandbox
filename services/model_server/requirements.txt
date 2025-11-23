@@ -4,3 +4,6 @@ torch==2.2.2
 numpy<2
 pydantic
 pytest
+pandas
+joblib
+scikit-learn==1.4.2
