@@ -46,3 +46,11 @@ def test_generate_expression_seeded_is_deterministic():
         rel=1e-4,
     )
     assert expr1[:5] == pytest.approx(expr2[:5], rel=1e-6)
+
+
+def test_artifacts_load_and_gene_count():
+    _ensure_loaded()
+    assert inference._genes is not None
+    assert len(inference._genes) == 500
+    assert inference._model is not None
+    assert inference._meta_df is not None and not inference._meta_df.empty
