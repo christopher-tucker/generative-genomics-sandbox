@@ -8,10 +8,15 @@ type Descriptor = {
   age: string;
 };
 
+type GeneRecord = {
+  id: string;
+  symbol: string;
+  expression: number;
+};
+
 type GenerateResponse = {
   model_version: string;
-  genes: string[];
-  expression: number[];
+  genes: GeneRecord[];
 };
 
 const App: React.FC = () => {
@@ -81,16 +86,18 @@ const App: React.FC = () => {
   const renderResult = () => {
     if (!result) return null;
 
-    const { model_version, genes, expression } = result;
-    const n = Math.min(20, genes.length, expression.length);
+    const { model_version, genes } = result;
+    const n = Math.min(20, genes.length);
 
     const rows: React.ReactElement[] = [];
     for (let i = 0; i < n; i++) {
+      const g = genes[i];
       rows.push(
         <tr key={i}>
           <td>{i}</td>
-          <td>{genes[i]}</td>
-          <td>{expression[i].toFixed(4)}</td>
+          <td>{g.symbol}</td>
+          <td>{g.id}</td>
+          <td>{g.expression.toFixed(4)}</td>
         </tr>
       );
     }
@@ -115,7 +122,8 @@ const App: React.FC = () => {
             <thead>
               <tr>
                 <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: "4px 8px" }}>#</th>
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: "4px 8px" }}>Gene</th>
+                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: "4px 8px" }}>Symbol</th>
+                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: "4px 8px" }}>ID</th>
                 <th style={{ borderBottom: "1px solid #ccc", textAlign: "right", padding: "4px 8px" }}>Expression</th>
               </tr>
             </thead>
