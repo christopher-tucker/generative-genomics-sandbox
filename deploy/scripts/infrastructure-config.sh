@@ -1,0 +1,7 @@
+REGION="us-west-2"
+CLUSTER_NAME="generative-genomics-cluster"
+SERVICE_NAME="generative-genomics-service"
+TARGET_GROUP_ARN="arn:aws:elasticloadbalancing:us-west-2:123179937836:targetgroup/generative-genomics-tg/54cf8c95d69a947f"
+ECS_SG_ID="sg-03cf4eb36ee8954c5"
+SUBNET_IDS="subnet-012ac77a8f03aa85b subnet-0bbdc53f5a3635524 subnet-018368e3ba363e51c subnet-05edc1eb4410e7646"
+ALB_DNS="generative-genomics-alb-1600138721.us-west-2.elb.amazonaws.com"
