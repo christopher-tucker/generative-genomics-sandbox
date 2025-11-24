@@ -14,11 +14,17 @@ This project builds a tiny version of a generative genomics platform that:
 
 ### Example Input
 
-```
-- Cell line: MCF7 cells
-- Treatment: estradiol
-- Dose: 10
-- Timepoint: 24 hours
+```json
+{
+  "descriptor": {
+    "celltype": "CD4 T cells",
+    "diseasestatus": "healthy",
+    "gender": "female",
+    "smoker": "no",
+    "age": "45"
+  },
+  "seed": 42
+}
 ```
 
 **Real-world inspiration:** Platforms like Synthesize Bio or Dyno Therapeutics.
@@ -28,7 +34,10 @@ This project builds a tiny version of a generative genomics platform that:
 - **Model server:** FastAPI + PyTorch (serves `/health` and `/generate`)
 - **API Gateway:** Golang (proxies `/api/generate` to the model server and serves static frontend)
 - **Frontend:** React + TypeScript + webpack (dev server on :3000; built assets served by gateway)
+  - Includes volcano plot visualization using Plotly.js
+  - Displays gene expression with gene symbols and IDs
 - **Deployment:** Dockerfile builds Go binary + React dist + Python runtime
+  - AWS ECS deployment scripts available in `deploy/`
 
 ## Data Sources
 
@@ -83,3 +92,10 @@ Run `python scripts/preprocess.py` to convert the GEO data in `data/raw/` into t
 - Inputs: `data/raw/GSE60424_series_matrix.txt(.gz)` and `data/raw/GSE60424_norm_counts_TPM_GRCh38.p13_NCBI.tsv.gz`
 - Outputs: `data/processed/X_expr.npy`, `data/processed/X_cond.npy`, `data/processed/meta.csv`
 - Saved artifacts: `models/genes_gse60424.json`, `models/design_encoder_gse60424.pkl`, `models/expr_scaler_gse60424.pkl`
+
+### Gene Symbol Mapping
+
+Run `python scripts/build_gene_mapping.py` to generate gene ID to symbol mappings:
+
+- Inputs: `data/raw/Human.GRCh38.p13.annot.tsv` and `models/genes_gse60424.json`
+- Output: `models/gene_names_gse60424.json` (maps gene IDs to symbols like "S100A8", "CD4", etc.)

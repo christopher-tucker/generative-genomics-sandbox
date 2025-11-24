@@ -26,7 +26,23 @@ Response body:
 ```json
 {
   "model_version": "cvae_gse60424_v1",
-  "genes": ["ENSG00000112357", "..."],
-  "expression": [4.76, 5.99, ...]  // ~500 floats, inverse-scaled log1p space
+  "genes": [
+    {
+      "id": 6279,
+      "symbol": "S100A8",
+      "expression": 4.7647948265
+    },
+    {
+      "id": 6280,
+      "symbol": "S100A9",
+      "expression": 5.9913253784
+    }
+    // ... ~500 gene records total
+  ]
 }
 ```
+
+Each gene record contains:
+- `id`: Numeric gene ID (Entrez Gene ID)
+- `symbol`: Gene symbol (e.g., "S100A8", "CD4") mapped from `models/gene_names_gse60424.json`
+- `expression`: Expression value (float, inverse-scaled log1p space)
