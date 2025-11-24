@@ -1,0 +1,26 @@
+.git
+.gitignore
+.vscode
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Python virtualenvs
+venv/
+.venv/
+services/model_server/venv/
+
+# Node modules and build artifacts
+node_modules/
+web-client/node_modules/
+web-client/dist/
+
+# Local data that shouldn't be baked into images
+data/raw/
+notebooks/
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
