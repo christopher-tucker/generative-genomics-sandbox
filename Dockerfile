@@ -14,7 +14,18 @@
     # Build the gateway binary
     RUN go build -o /app/api-gateway ./cmd/gateway
     
-    # --- Stage 2: Python runtime (FastAPI + PyTorch) ---
+    # --- Stage 2: Build React frontend ---
+    FROM node:20 AS frontend-builder
+    
+    WORKDIR /app/web-client
+    
+    COPY web-client/package.json web-client/package-lock.json ./
+    RUN npm install
+    
+    COPY web-client ./
+    RUN npm run build
+    
+    # --- Stage 3: Python runtime (FastAPI + PyTorch + Gateway + Frontend) ---
     FROM python:3.10-slim
     
     # Needed for numpy, pandas, scikit-learn
@@ -36,6 +47,9 @@
     
     # Copy Go gateway binary
     COPY --from=go-builder /app/api-gateway /app/api-gateway
+    
+    # Copy frontend build output
+    COPY --from=frontend-builder /app/web-client/dist /app/web-client-dist
     
     # Add entrypoint
     COPY infra/entrypoint.sh /app/entrypoint.sh

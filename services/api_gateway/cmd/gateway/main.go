@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -44,10 +46,34 @@ func main() {
 		proxyGenerate(w, r, modelServerURL)
 	})
 
-	// Temporary root handler (later: serve React build here)
+	// ---- Static frontend serving ----
+	distDir := "/app/web-client-dist"
+	fileServer := http.FileServer(http.Dir(distDir))
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte("Generative Genomics API Gateway\n\nTry POST /api/generate"))
+		// Don't hijack API routes (they're handled above)
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		// Root path: serve index.html
+		if r.URL.Path == "/" || r.URL.Path == "" {
+			http.ServeFile(w, r, filepath.Join(distDir, "index.html"))
+			return
+		}
+
+		// Try to serve an actual file from dist (e.g. /main.[hash].js, /179...js, /assets/...)
+		relPath := strings.TrimPrefix(r.URL.Path, "/")
+		candidate := filepath.Join(distDir, relPath)
+
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// Fallback: SPA route → index.html
+		http.ServeFile(w, r, filepath.Join(distDir, "index.html"))
 	})
 
 	server := &http.Server{
