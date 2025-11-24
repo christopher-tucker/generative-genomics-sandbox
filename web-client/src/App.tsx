@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import VolcanoPlot from "./components/VolcanoPlot";
+
 
 type Descriptor = {
   celltype: string;
@@ -130,6 +132,7 @@ const App: React.FC = () => {
             <tbody>{rows}</tbody>
           </table>
         </div>
+        <VolcanoPlot genes={genes} />
       </div>
     );
   };
